@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Strategy Compiler</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { font-family: -apple-system, Segoe UI, sans-serif; max-width: 760px; margin: 2rem auto; padding: 0 1rem; line-height: 1.5; }
+  h1 { font-size: 1.3rem; }
+  .flow { color: #888; font-size: 0.85rem; margin-bottom: 1.5rem; }
+  textarea { width: 100%; box-sizing: border-box; font-size: 1rem; padding: 0.5rem; }
+  input[type=number] { width: 6rem; }
+  button { padding: 0.5rem 1rem; font-size: 1rem; cursor: pointer; margin-top: 0.5rem; }
+  .rule { border: 1px solid #ccc; border-radius: 6px; padding: 0.6rem 0.8rem; margin: 0.4rem 0; }
+  .PASS { border-left: 5px solid #2a9d5c; }
+  .FAIL { border-left: 5px solid #c94c4c; }
+  .UNKNOWN { border-left: 5px solid #d9a441; }
+  .SKIPPED { border-left: 5px solid #999; }
+  .decision { font-size: 1.4rem; font-weight: bold; padding: 0.6rem; border-radius: 6px; margin: 1rem 0; }
+  .ALLOW { background: #dff5e6; color: #1b5e2f; }
+  .BLOCK { background: #fbe4e4; color: #7a1f1f; }
+  .UNKNOWNdecision { background: #fbf1da; color: #7a5a1f; }
+  pre { background: #f4f4f4; padding: 0.6rem; overflow-x: auto; font-size: 0.8rem; }
+  .note { font-size: 0.8rem; color: #888; }
+</style>
+</head>
+<body>
+  <h1>Strategy Compiler</h1>
+  <div class="flow">Human rule &rarr; compiled constraints &rarr; RYO evidence &rarr; deterministic evaluation &rarr; decision &rarr; receipt</div>
+  <div class="note">This UI calls fixture LLM + fixture RYO data (labelled below) -- see /api/decide and docs/LIMITATIONS.md.</div>
+
+  <textarea id="strategy" rows="3">Buy SOL when momentum is positive, BTC isn't bearish, and SOL stays below 20% of the portfolio.</textarea>
+  <div>
+    Allocation (fraction of portfolio, e.g. 0.15):
+    <input id="allocation" type="number" step="0.01" value="0.15" />
+  </div>
+  <button onclick="runDecide()">Compile &amp; Evaluate</button>
+
+  <div id="output"></div>
+
+<script>
+async function runDecide() {
+  const strategy_text = document.getElementById('strategy').value;
+  const allocation_pct = parseFloat(document.getElementById('allocation').value);
+  const res = await fetch('/api/decide', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({strategy_text, allocation_pct})
+  });
+  const receipt = await res.json();
+  render(receipt);
+}
+
+function render(receipt) {
+  const out = document.getElementById('output');
+  const decisionClass = receipt.decision === 'ALLOW' ? 'ALLOW' : (receipt.decision === 'BLOCK' ? 'BLOCK' : 'UNKNOWNdecision');
+  let html = `<div class="decision ${decisionClass}">${receipt.decision}</div>`;
+  html += `<div class="note">trace_id ${receipt.trace_id} &middot; model ${receipt.compiler_model} &middot; sources: ${receipt.sources.join(', ') || 'none'}</div>`;
+  for (const r of receipt.rule_results) {
+    const rule = receipt.rules.find(x => x.id === r.rule_id);
+    html += `<div class="rule ${r.status}"><b>${r.status}</b> &mdash; ${rule.raw_text}<br/><span class="note">${r.explanation}</span></div>`;
+  }
+  if (receipt.blocking_rule_ids.length) {
+    html += `<p><b>Blocking rule(s):</b> ${receipt.blocking_rule_ids.join(', ')}</p>`;
+  }
+  if (receipt.unresolved_rule_ids.length) {
+    html += `<p><b>Unresolved rule(s):</b> ${receipt.unresolved_rule_ids.join(', ')}</p>`;
+  }
+  html += `<pre>${JSON.stringify(receipt, null, 2)}</pre>`;
+  out.innerHTML = html;
+}
+</script>
+</body>
+</html>
