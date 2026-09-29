@@ -50,7 +50,7 @@ class RyoClientConfig:
     max_retries: int = 3
 
     @classmethod
-    def from_env(cls) -> "RyoClientConfig":
+    def from_env(cls) -> RyoClientConfig:
         base_url = os.environ.get("RYO_MCP_URL", "").rstrip("/")
         api_key = os.environ.get("RYO_MCP_KEY", "")
         if not base_url or not api_key:
@@ -68,23 +68,76 @@ class RyoClient:
     same guide recommends in "Rate limits, retries, and errors":
     exponential backoff with jitter for 429/503/network errors, no retry
     on invalid-argument errors, honour Retry-After.
+
+    Tool validation (which tools exist, which arguments they take) defaults
+    to the module-level RYO_TOOLS/REQUIRED_ARGS table, hand-transcribed from
+    the guide. Call `refresh_catalog()` once to replace that with the real,
+    live `GET /tools` catalog instead -- the guide's own recommendation
+    ("The catalog is authoritative. ... Read it at startup instead of
+    hard-coding assumptions"). This has NOT been exercised against a live
+    service in this environment (no RYO_MCP_KEY); it is implemented and
+    unit-tested against a mocked transport in test_ryo_client.py, which is a
+    different claim from "verified live" -- see docs/LIMITATIONS.md.
     """
 
     def __init__(self, config: RyoClientConfig | None = None, *, client: httpx.Client | None = None):
         self.config = config or RyoClientConfig.from_env()
         self._client = client or httpx.Client(timeout=self.config.timeout_s)
+        self._tool_specs: dict[str, set[str]] = dict(RYO_TOOLS)
+        self._required_args: dict[str, set[str]] = dict(REQUIRED_ARGS)
+        self.catalog_source = "hard-coded" 
+
+    def refresh_catalog(self) -> bool:
+        """Fetch GET {base}/tools and, if it returns a well-formed catalog,
+        make it this client's source of truth for argument validation.
+
+        Returns True if the live catalog was adopted, False if it fell back
+        to keeping the existing (hard-coded, or previous live) table --
+        e.g. on a network error, non-200, or a response that doesn't parse
+        as a list of {name, inputSchema} objects. Never raises for a normal
+        "couldn't reach it" failure; this is meant to be safe to call
+        speculatively before a run without risking that run on the catalog
+        endpoint being unavailable.
+        """
+        try:
+            catalog = self.discover_tools()
+        except (httpx.TransportError, httpx.HTTPStatusError, RyoToolError, ValueError):
+            return False
+
+        if not isinstance(catalog, list):
+            return False
+
+        new_specs: dict[str, set[str]] = {}
+        new_required: dict[str, set[str]] = {}
+        for entry in catalog:
+            if not isinstance(entry, dict) or "name" not in entry:
+                return False  # malformed entry -- don't adopt a partial/broken catalog
+            name = entry["name"]
+            input_schema = entry.get("inputSchema") or {}
+            properties = input_schema.get("properties", {}) if isinstance(input_schema, dict) else {}
+            required = input_schema.get("required", []) if isinstance(input_schema, dict) else []
+            new_specs[name] = set(properties.keys())
+            new_required[name] = set(required)
+
+        if not new_specs:
+            return False  
+
+        self._tool_specs = new_specs
+        self._required_args = new_required
+        self.catalog_source = "live"
+        return True
 
     def _validate_args(self, tool: str, arguments: dict[str, Any]) -> None:
-        if tool not in RYO_TOOLS:
+        if tool not in self._tool_specs:
             raise RyoToolError(
-                f"'{tool}' is not one of RYO's six published tools: {sorted(RYO_TOOLS)}. "
-                "Refusing to call an invented tool name."
+                f"'{tool}' is not in this client's tool catalog ({self.catalog_source}): "
+                f"{sorted(self._tool_specs)}. Refusing to call an unrecognized tool."
             )
-        allowed = RYO_TOOLS[tool]
+        allowed = self._tool_specs[tool]
         unknown = set(arguments) - allowed
         if unknown:
             raise RyoToolError(f"{tool} does not accept argument(s) {sorted(unknown)}")
-        missing = REQUIRED_ARGS.get(tool, set()) - set(arguments)
+        missing = self._required_args.get(tool, set()) - set(arguments)
         if missing:
             raise RyoToolError(f"{tool} requires argument(s) {sorted(missing)}")
 
@@ -128,7 +181,14 @@ class RyoClient:
                 )
 
             body = response.json()
-            return parse_envelope(body)
+
+            if not isinstance(body, dict) or "result" not in body:
+                raise RyoToolError(
+                    f"unexpected REST response shape for {tool}: expected a "
+                    "top-level 'result' key per MCP-Builder-Guide.md's own "
+                    f"Python REST example, got keys={list(body) if isinstance(body, dict) else type(body).__name__}"
+                )
+            return parse_envelope(body["result"])
 
         raise RyoToolError(f"RYO call to {tool} failed after {self.config.max_retries} attempts") from last_error
 
@@ -146,8 +206,46 @@ class RyoClient:
     def _safe_json(response: httpx.Response) -> Any:
         try:
             return response.json()
-        except Exception:
+        except ValueError:
+
             return {"raw_text": response.text}
+
+    def health(self) -> dict[str, Any]:
+        """GET {base}/health -- guide: "Health does not require authentication."
+        Implemented per spec; not exercised against the live service here.
+        """
+        response = self._client.get(f"{self.config.base_url}/health")
+        response.raise_for_status()
+        return response.json()
+
+    def whoami(self) -> dict[str, Any]:
+        """GET {base}/whoami -- guide: "Reading `whoami` does not consume
+        tool-call quota." Implemented per spec; not exercised live here.
+        """
+        response = self._client.get(
+            f"{self.config.base_url}/whoami",
+            headers={"Authorization": f"Bearer {self.config.api_key}"},
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def discover_tools(self) -> dict[str, Any]:
+        """GET {base}/tools -- guide: "The catalog is authoritative. ...
+        Read it at startup instead of hard-coding assumptions."
+
+        Returns the raw list of {name, description, inputSchema} objects
+        (matching RYO's real McpToolInfo schema, confirmed against
+        docs/ryo-openapi-subset.json's paths['/api/mcp/tools']). Call
+        refresh_catalog() instead of this directly if the goal is to update
+        this client's own argument-validation table -- that method wraps
+        this one with the "don't adopt a broken catalog" safety checks.
+        """
+        response = self._client.get(
+            f"{self.config.base_url}/tools",
+            headers={"Authorization": f"Bearer {self.config.api_key}"},
+        )
+        response.raise_for_status()
+        return response.json()
 
     def close(self) -> None:
         self._client.close()
@@ -160,7 +258,7 @@ class FixtureRyoClient:
     exercise the resolver/evaluator against a realistic envelope shape
     without a live RYO_MCP_KEY. Every fixture file is labelled
     `"source": "fixture"` inside itself (see tests/fixtures/envelopes/) so
-    nothing produced this way can be mistaken for a live RYO read... the
+    nothing produced this way can be mistaken for a live RYO read -- the
     label travels with the data into the receipt (see receipt.py), it is
     not just a comment in this file.
     """

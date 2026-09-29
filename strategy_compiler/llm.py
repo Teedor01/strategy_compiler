@@ -88,7 +88,7 @@ class AnthropicLLM:
         )
         parsed = json.loads(text)
         if not isinstance(parsed, list):
-            raise ValueError("expected a JSON array of rule objects")
+            raise TypeError("expected a JSON array of rule objects")
         return parsed
 
 
@@ -98,8 +98,8 @@ class FixtureLLM:
     Holds exact-match canned translations for the ugly test sentences named
     in the project brief (see tests/test_compiler.py), so the compiler's
     ambiguity-handling logic can be exercised without any network access or
-    API key. Anything not in the table raises, loudly, rather than guessing
-    -- a silent fallback here would be exactly the kind of "fake a response"
+    API key. Anything not in the table raises, loudly, rather than guessing...
+     a silent fallback here would be exactly the kind of "fake a response"
     behavior the brief explicitly forbids.
     """
 

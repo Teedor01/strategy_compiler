@@ -20,7 +20,7 @@ class EvidenceSource(str, Enum):
     RYO's guide is explicit that the platform is read-only market research and
     "does not read user balances, positions, or portfolio state" (MCP-Builder-Guide.md,
     "Six independent research tools"). So a rule like "never exceed 20% of the
-    portfolio" cannot be resolved from RYO at all... it has to be resolved from
+    portfolio" cannot be resolved from RYO at all -- it has to be resolved from
     state the builder's own application declares. Conflating the two would be a
     correctness bug, not a style choice, so it is a first-class field here.
     """
@@ -56,7 +56,7 @@ class Rule:
     """One machine-checkable constraint extracted from the human strategy."""
 
     id: str
-    raw_text: str  # the exact clause of the original strategy this came from
+    raw_text: str  
     status: RuleStatus
     asset: str | None = None
     metric: str | None = None
@@ -73,15 +73,15 @@ class Strategy:
 
     raw_text: str
     rules: tuple[Rule, ...]
-    compiler_model: str  
-    compiled_at: str  
+    compiler_model: str  # e.g. "claude-sonnet-4-6" or "fixture:deterministic-test-double"
+    compiled_at: str  # ISO-8601 UTC
 
 
 class RuleResultStatus(str, Enum):
     PASS = "PASS"
     FAIL = "FAIL"
-    UNKNOWN = "UNKNOWN"  
-    SKIPPED = "SKIPPED"  
+    UNKNOWN = "UNKNOWN"  # required evidence could not be obtained
+    SKIPPED = "SKIPPED"  # rule itself was not EXECUTABLE (clarification/unsupported/conflicting)
 
 
 @dataclass(frozen=True)
@@ -92,8 +92,8 @@ class ResolvedEvidence:
     requirement: EvidenceRequirement
     available: bool
     value: Any = None
-    raw_envelope: dict[str, Any] | None = None  
-    data_mode: str | None = None  
+    raw_envelope: dict[str, Any] | None = None  # the full RYO envelope, if source == ryo_tool
+    data_mode: str | None = None  # RYO's data_mode: live | mixed | simulated | unknown
     as_of: str | None = None
     note: str | None = None
 
@@ -118,7 +118,7 @@ class Receipt:
     strategy: Strategy
     rule_results: tuple[RuleResult, ...]
     blocking_rule_ids: tuple[str, ...]
-    unresolved_rule_ids: tuple[str, ...]  
+    unresolved_rule_ids: tuple[str, ...]  # NEEDS_CLARIFICATION / UNSUPPORTED / CONFLICTING
     evaluator_version: str
     generated_at: str
-    sources: tuple[str, ...] 
+    sources: tuple[str, ...]  # human-readable list of where evidence came from

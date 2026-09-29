@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import json
-import os
-import sys
 
 import typer
 
@@ -70,6 +68,17 @@ def decide(
             fg=typer.colors.YELLOW,
             err=True,
         )
+
+
+@app.command()
+def demo():
+    """Run the canonical demo: one scenario, one number changed, both
+    failure stories, and a live reproducibility check. Deterministic,
+    fixture-only, prints its own provenance label.
+    """
+    from .demo import run_canonical_demo
+
+    run_canonical_demo()
 
 
 @app.command()

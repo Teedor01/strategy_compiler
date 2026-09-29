@@ -4,7 +4,6 @@ from .envelope import parse_envelope
 from .llm import FixtureLLM
 
 
-
 CANNED_TRANSLATIONS = {
     "Buy SOL when momentum is positive, BTC isn't bearish, and SOL stays below 20% of the portfolio.": [
         {
@@ -58,8 +57,18 @@ CANNED_TRANSLATIONS = {
             "ambiguity_note": None,
         },
     ],
-
+    # --- ugly real-world sentences from the project brief's own test list ---
     "Buy SOL only when momentum is strong.": [
+        {
+            "raw_text": "momentum is strong",
+            "asset": "SOL",
+            "metric": "momentum_state",
+            "operator": None,
+            "value": None,
+            "ambiguity_note": "'strong' has no defined threshold; the human did not state one",
+        }
+    ],
+    "Buy SOL when momentum is strong.": [
         {
             "raw_text": "momentum is strong",
             "asset": "SOL",
@@ -138,9 +147,29 @@ CANNED_TRANSLATIONS = {
             "ambiguity_note": None,
         }
     ],
+    # --- multiple blocking rules in one strategy ---
+    "Buy SOL only if momentum is above 90 and SOL stays below 5% of the portfolio.": [
+        {
+            "raw_text": "momentum is above 90",
+            "asset": "SOL",
+            "metric": "momentum_state",
+            "operator": ">",
+            "value": 90,
+            "ambiguity_note": None,
+        },
+        {
+            "raw_text": "SOL stays below 5% of the portfolio",
+            "asset": "SOL",
+            "metric": "allocation_pct",
+            "operator": "<",
+            "value": 0.05,
+            "ambiguity_note": None,
+        },
+    ],
 }
 
 DEMO_FIXTURE_LLM = FixtureLLM(CANNED_TRANSLATIONS)
+
 
 
 
@@ -151,12 +180,14 @@ _MARKET_OVERVIEW_RISK_ON = {
     "data_mode": "simulated",
     "as_of": "2026-09-20T00:00:00Z",
     "request": {},
-    "data": {"regime": "risk_on"},
+    "data": {"regime": "risk_on", "sentiment": {"fear_greed_index": 74.0, "label": "greed"}},
     "summary": {"headline": "[FIXTURE] Market regime: risk_on", "key_points": []},
-    "availability": {"regime": "available"},
+    "availability": {"regime": "available", "sentiment": "available"},
     "warnings": [
-        "This is a hand-built local fixture, not a live RYO response. "
-        "data_mode is deliberately 'simulated'."
+        (
+            "This is a hand-built local fixture, not a live RYO response. "
+            "data_mode is deliberately 'simulated'."
+        )
     ],
 }
 
@@ -167,12 +198,19 @@ _ANALYZE_TOKEN_SOL_STRONG = {
     "data_mode": "simulated",
     "as_of": "2026-09-20T00:00:00Z",
     "request": {"symbol": "SOL"},
-    "data": {"technicals": {"rsi_14": 62.4, "atr_14": 3.1}},
+    "data": {
+        "asset": {"symbol": "SOL", "name": "Solana", "rank": 7},
+        "market": {"price_usd": 111.76},
+        "performance": {"change_24h_pct": 1.32},
+        "technical_analysis": {"trend": "up", "rsi_14": 62.4, "atr_14_pct": 3.1},
+    },
     "summary": {"headline": "[FIXTURE] SOL RSI(14) 62.4", "key_points": []},
-    "availability": {"technicals": "available"},
+    "availability": {"technical_analysis": "available", "market": "available", "asset": "available"},
     "warnings": [
-        "This is a hand-built local fixture, not a live RYO response. "
-        "data_mode is deliberately 'simulated'."
+        (
+            "This is a hand-built local fixture, not a live RYO response. "
+            "data_mode is deliberately 'simulated'."
+        )
     ],
 }
 

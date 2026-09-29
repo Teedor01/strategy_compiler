@@ -53,6 +53,13 @@ def invoke(args: dict[str, Any], *, llm: LLMProvider, ryo: RyoClient) -> dict[st
         }
 
     user_declared = args.get("user_declared") or {}
+    if not isinstance(user_declared, dict):
+        return {
+            "name": SKILL_DEFINITION["name"],
+            "status": "error",
+            "result": {"error": "user_declared must be an object/dict if provided"},
+            "latency_ms": int((time.monotonic() - started) * 1000),
+        }
     try:
         receipt = decide(strategy_text, llm=llm, ryo=ryo, user_declared=user_declared)
     except Exception as exc:  # noqa: BLE001 - surfaced to caller, not swallowed

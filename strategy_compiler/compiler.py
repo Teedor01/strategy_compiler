@@ -19,6 +19,18 @@ _METRIC_ALIASES = {
     "portfolio_allocation": "allocation_pct",
     "safety": "safety_check",
     "safety_check": "safety_check",
+    "price": "price_usd",
+    "price_usd": "price_usd",
+    "24h_change": "change_24h_pct",
+    "change_24h_pct": "change_24h_pct",
+    "daily_change": "change_24h_pct",
+    "pump": "change_24h_pct",
+    "rank": "market_cap_rank",
+    "market_cap_rank": "market_cap_rank",
+    "market_cap": "market_cap_rank",
+    "sentiment": "fear_greed_index",
+    "fear_greed": "fear_greed_index",
+    "fear_greed_index": "fear_greed_index",
 }
 
 
@@ -92,7 +104,7 @@ def _classify_single(rule_id: str, raw: dict[str, Any]) -> Rule:
 
 def _numeric_contradiction(a: Rule, b: Rule) -> bool:
     """True if a and b, both EXECUTABLE on the same asset+metric, cannot
-    both be satisfied by any value... checked with plain interval
+    both be satisfied by any value -- checked with plain interval
     arithmetic, not a model opinion.
     """
     if not (isinstance(a.value, (int, float)) and isinstance(b.value, (int, float))):

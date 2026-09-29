@@ -6,7 +6,20 @@ import json
 from typing import Any
 
 from .evaluator import EVALUATOR_VERSION
-from .schema import Decision, Receipt, RuleResult, RuleResultStatus, RuleStatus, Strategy
+from .schema import (
+    Decision,
+    Receipt,
+    RuleResult,
+    RuleResultStatus,
+    RuleStatus,
+    Strategy,
+)
+
+
+SIMULATED_EVIDENCE_LABEL = (
+    "SIMULATED RYO RESPONSE — FIELD STRUCTURE VERIFIED AGAINST REAL RYO DATA, "
+    "VALUES ARE NOT LIVE"
+)
 
 
 def _trace_id(strategy: Strategy, results: tuple[RuleResult, ...]) -> str:
@@ -65,9 +78,34 @@ def build_receipt(strategy: Strategy, decision: Decision, results: tuple[RuleRes
     )
 
 
+def _provenance_label(evidence) -> str:
+    """One-word provenance for one piece of evidence, distinct enough that
+    simulated data can never be visually confused with a live RYO read:
+
+        "live" | "mixed" | "simulated" | "unknown"   -- from RYO's own
+                                                         data_mode field
+        "user_declared"                              -- not from RYO at all
+        "unresolved"                                  -- evidence.available is False
+    """
+    if evidence is None:
+        return "unresolved"
+    if not evidence.available:
+        return "unresolved"
+    if evidence.requirement.source.value == "user_declared":
+        return "user_declared"
+    return evidence.data_mode or "unknown"
+
+
 def receipt_to_dict(receipt: Receipt) -> dict[str, Any]:
     """JSON-serializable form, shaped close to the brief's own sketch."""
+    provenance_by_rule = {
+        r.rule_id: _provenance_label(r.evidence) for r in receipt.rule_results
+    }
+    contains_simulated_evidence = any(p == "simulated" for p in provenance_by_rule.values())
     return {
+        "contains_simulated_evidence": contains_simulated_evidence,
+        "simulated_evidence_label": SIMULATED_EVIDENCE_LABEL if contains_simulated_evidence else None,
+        "evidence_provenance": provenance_by_rule,
         "trace_id": receipt.trace_id,
         "decision": receipt.decision,
         "strategy_text": receipt.strategy.raw_text,
@@ -100,6 +138,7 @@ def receipt_to_dict(receipt: Receipt) -> dict[str, Any]:
                     else {
                         "metric": r.evidence.requirement.metric,
                         "source": r.evidence.requirement.source.value,
+                        "provenance": _provenance_label(r.evidence),
                         "available": r.evidence.available,
                         "value": r.evidence.value,
                         "data_mode": r.evidence.data_mode,

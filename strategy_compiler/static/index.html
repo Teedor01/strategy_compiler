@@ -22,12 +22,28 @@
   .UNKNOWNdecision { background: #fbf1da; color: #7a5a1f; }
   pre { background: #f4f4f4; padding: 0.6rem; overflow-x: auto; font-size: 0.8rem; }
   .note { font-size: 0.8rem; color: #888; }
+  .sim-banner {
+    background: repeating-linear-gradient(45deg, #d9a441, #d9a441 10px, #b9860f 10px, #b9860f 20px);
+    color: #fff; font-weight: bold; text-align: center; padding: 0.4rem;
+    border-radius: 4px; margin-bottom: 0.8rem; letter-spacing: 0.03em;
+  }
+  .blocking-banner {
+    background: #7a1f1f; color: #fff; font-weight: bold; padding: 0.6rem 0.8rem;
+    border-radius: 6px; margin: 0.6rem 0;
+  }
+  .rule.blocking { outline: 2px solid #c94c4c; }
+  .provenance { display: inline-block; font-size: 0.7rem; padding: 0.05rem 0.4rem;
+    border-radius: 3px; margin-left: 0.4rem; text-transform: uppercase; }
+  .prov-simulated { background: #d9a441; color: #fff; }
+  .prov-live { background: #2a9d5c; color: #fff; }
+  .prov-user_declared { background: #6b7ba3; color: #fff; }
+  .prov-unresolved { background: #999; color: #fff; }
 </style>
 </head>
 <body>
   <h1>Strategy Compiler</h1>
   <div class="flow">Human rule &rarr; compiled constraints &rarr; RYO evidence &rarr; deterministic evaluation &rarr; decision &rarr; receipt</div>
-  <div class="note">This UI calls fixture LLM + fixture RYO data (labelled below) -- see /api/decide and docs/LIMITATIONS.md.</div>
+  <div class="note">This UI calls fixture LLM + fixture RYO data (labelled below)... see /api/decide and docs/LIMITATIONS.md.</div>
 
   <textarea id="strategy" rows="3">Buy SOL when momentum is positive, BTC isn't bearish, and SOL stays below 20% of the portfolio.</textarea>
   <div>
@@ -53,18 +69,40 @@ async function runDecide() {
 
 function render(receipt) {
   const out = document.getElementById('output');
+  let html = '';
+
+  if (receipt.contains_simulated_evidence) {
+    html += `<div class="sim-banner">⚠ ${receipt.simulated_evidence_label}</div>`;
+  }
+
   const decisionClass = receipt.decision === 'ALLOW' ? 'ALLOW' : (receipt.decision === 'BLOCK' ? 'BLOCK' : 'UNKNOWNdecision');
-  let html = `<div class="decision ${decisionClass}">${receipt.decision}</div>`;
+  html += `<div class="decision ${decisionClass}">${receipt.decision}</div>`;
   html += `<div class="note">trace_id ${receipt.trace_id} &middot; model ${receipt.compiler_model} &middot; sources: ${receipt.sources.join(', ') || 'none'}</div>`;
+
+  if (receipt.blocking_rule_ids.length) {
+    const blockingText = receipt.blocking_rule_ids
+      .map(id => receipt.rules.find(x => x.id === id).raw_text)
+      .join('; ');
+    html += `<div class="blocking-banner">⛔ Blocked by: ${blockingText}</div>`;
+  }
+
   for (const r of receipt.rule_results) {
     const rule = receipt.rules.find(x => x.id === r.rule_id);
-    html += `<div class="rule ${r.status}"><b>${r.status}</b> &mdash; ${rule.raw_text}<br/><span class="note">${r.explanation}</span></div>`;
-  }
-  if (receipt.blocking_rule_ids.length) {
-    html += `<p><b>Blocking rule(s):</b> ${receipt.blocking_rule_ids.join(', ')}</p>`;
+    const isBlocking = receipt.blocking_rule_ids.includes(r.rule_id);
+    const prov = (receipt.evidence_provenance || {})[r.rule_id] || 'unresolved';
+    html += `<div class="rule ${r.status}${isBlocking ? ' blocking' : ''}">` +
+      `<b>${r.status}</b>${isBlocking ? ' ⛔' : ''} &mdash; ${rule.raw_text}` +
+      `<span class="provenance prov-${prov}">${prov}</span><br/>` +
+      `<span class="note">${r.explanation}</span></div>`;
   }
   if (receipt.unresolved_rule_ids.length) {
-    html += `<p><b>Unresolved rule(s):</b> ${receipt.unresolved_rule_ids.join(', ')}</p>`;
+    const unresolvedText = receipt.unresolved_rule_ids
+      .map(id => {
+        const rule = receipt.rules.find(x => x.id === id);
+        return `${rule.raw_text} (${rule.status}: ${rule.problem || ''})`;
+      })
+      .join('; ');
+    html += `<p><b>Unresolved rule(s):</b> ${unresolvedText}</p>`;
   }
   html += `<pre>${JSON.stringify(receipt, null, 2)}</pre>`;
   out.innerHTML = html;
