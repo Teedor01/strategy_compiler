@@ -12,15 +12,15 @@ from strategy_compiler.schema import (
 
 
 def _rule(**kwargs) -> Rule:
-    defaults = dict(
-        id="rule_1",
-        raw_text="test",
-        status=RuleStatus.EXECUTABLE,
-        asset="SOL",
-        metric="momentum_state",
-        operator=ComparisonOperator.EQ,
-        value="positive",
-    )
+    defaults = {
+        "id": "rule_1",
+        "raw_text": "test",
+        "status": RuleStatus.EXECUTABLE,
+        "asset": "SOL",
+        "metric": "momentum_state",
+        "operator": ComparisonOperator.EQ,
+        "value": "positive",
+    }
     defaults.update(kwargs)
     return Rule(**defaults)
 
@@ -75,7 +75,7 @@ def test_decision_allow_when_all_pass():
     rule = _rule(operator=ComparisonOperator.GT, value=50)
     ev = _evidence(rule, 62.4)
     strategy = Strategy(raw_text="x", rules=(rule,), compiler_model="fixture:test", compiled_at="now")
-    decision, results = evaluate_strategy(strategy, {rule.id: ev})
+    decision, _results = evaluate_strategy(strategy, {rule.id: ev})
     assert decision == "ALLOW"
 
 
@@ -92,7 +92,7 @@ def test_decision_unknown_when_evidence_missing_and_nothing_fails():
     rule = _rule()
     ev = _evidence(rule, None, available=False)
     strategy = Strategy(raw_text="x", rules=(rule,), compiler_model="fixture:test", compiled_at="now")
-    decision, results = evaluate_strategy(strategy, {rule.id: ev})
+    decision, _results = evaluate_strategy(strategy, {rule.id: ev})
     assert decision == "UNKNOWN"
 
 
@@ -104,5 +104,5 @@ def test_fail_beats_unknown_in_same_strategy():
     strategy = Strategy(
         raw_text="x", rules=(failing, unknown), compiler_model="fixture:test", compiled_at="now"
     )
-    decision, results = evaluate_strategy(strategy, {failing.id: failing_ev, unknown.id: unknown_ev})
+    decision, _results = evaluate_strategy(strategy, {failing.id: failing_ev, unknown.id: unknown_ev})
     assert decision == "BLOCK"

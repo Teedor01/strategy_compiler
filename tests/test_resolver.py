@@ -37,8 +37,8 @@ def test_user_declared_metric_requires_caller_input():
 
 
 def test_ryo_tool_not_in_fixture_is_unavailable_not_crashing():
-    client = FixtureRyoClient(load_envelope_fixtures())  
-    rule = _rule("market_regime")  
+    client = FixtureRyoClient(load_envelope_fixtures())  # no compare_tokens/deep_analysis loaded
+    rule = _rule("market_regime")  # this one IS loaded (market_overview)
     ev = resolver.resolve(rule, client.call)
     assert ev.available is True
     assert ev.value == "risk_on"

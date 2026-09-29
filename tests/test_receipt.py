@@ -40,8 +40,8 @@ def test_same_inputs_produce_same_trace_id():
 
 
 def test_different_evidence_changes_trace_id_and_decision():
-    strategy_a, evidence_a = _strategy_and_evidence(62.4) 
-    strategy_b, evidence_b = _strategy_and_evidence(30.0)  
+    strategy_a, evidence_a = _strategy_and_evidence(62.4)  # passes GT 50
+    strategy_b, evidence_b = _strategy_and_evidence(30.0)  # fails GT 50
 
     decision_a, results_a = evaluate_strategy(strategy_a, evidence_a)
     receipt_a = build_receipt(strategy_a, decision_a, results_a)
