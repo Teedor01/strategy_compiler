@@ -1,3 +1,28 @@
+"""RYO builder client -- REST transport.
+
+Implemented directly against docs/MCP-Builder-Guide.md (RYO's own guide,
+"Last updated: August 13, 2026", endpoint https://app-ryochan.com/api/mcp,
+protocol version 2024-11-05). Not tested against the live service in this
+environment: this build has no RYO_MCP_KEY. See docs/LIMITATIONS.md for
+exactly what that means and does not mean.
+
+The six tools and their required/optional arguments are taken verbatim from
+the guide's tool table:
+
+    market_overview                   () -> market regime, totals, sentiment, breadth, movers
+    scan_market                       (chain?, theme?, top_n?) -> ranked shortlist
+    analyze_token                     (symbol) -> fast market + technical read
+    deep_analysis                     (symbol, include_perp?) -> full evidence pack
+    compare_tokens                    (symbols, intent?) -> 2-4 assets compared
+    monitor_market_sentiment_shift    (time_window fixed "7d") -> 7-day sentiment shift
+
+This module does not invent a seventh tool, does not accept a wallet address
+anywhere (the guide is explicit RYO "does not accept a wallet address"), and
+does not attempt to read portfolio/user state, because the guide states
+plainly that RYO "cannot read user balances, positions, or portfolio state" --
+that responsibility belongs to the calling application, which is why
+schema.py has a separate EvidenceSource.USER_DECLARED path.
+"""
 from __future__ import annotations
 
 import os
@@ -83,9 +108,13 @@ class RyoClient:
     def __init__(self, config: RyoClientConfig | None = None, *, client: httpx.Client | None = None):
         self.config = config or RyoClientConfig.from_env()
         self._client = client or httpx.Client(timeout=self.config.timeout_s)
+        # Defaults to the hard-coded table; refresh_catalog() replaces this
+        # with the live catalog on success and leaves it untouched on
+        # failure -- there is exactly one source of truth in use at any
+        # moment, never two consulted at once.
         self._tool_specs: dict[str, set[str]] = dict(RYO_TOOLS)
         self._required_args: dict[str, set[str]] = dict(REQUIRED_ARGS)
-        self.catalog_source = "hard-coded" 
+        self.catalog_source = "hard-coded"  # or "live" after a successful refresh_catalog()
 
     def refresh_catalog(self) -> bool:
         """Fetch GET {base}/tools and, if it returns a well-formed catalog,
@@ -120,7 +149,7 @@ class RyoClient:
             new_required[name] = set(required)
 
         if not new_specs:
-            return False  
+            return False  # an empty catalog is more likely a bug than reality -- don't adopt it
 
         self._tool_specs = new_specs
         self._required_args = new_required
@@ -173,6 +202,9 @@ class RyoClient:
                 continue
 
             if response.status_code >= 400:
+                # Guide: "Do not retry invalid arguments or unknown tools
+                # without changing the request." -- so 4xx other than 429
+                # is not retried.
                 body = self._safe_json(response)
                 raise RyoToolError(
                     f"RYO {response.status_code} calling {tool}: {body}",
@@ -181,7 +213,14 @@ class RyoClient:
                 )
 
             body = response.json()
-
+            # SPEC NOTE (fixed after re-audit): the guide's own Python REST
+            # client example does `response.json()["result"]`, not
+            # `response.json()` directly -- the REST endpoint wraps the
+            # public envelope in a top-level "result" key, the same as the
+            # MCP JSON-RPC transport does. The first implementation of this
+            # method read the top-level body as the envelope itself, which
+            # was wrong; this was caught by re-reading the guide line by
+            # line rather than trusting the earlier summary of it.
             if not isinstance(body, dict) or "result" not in body:
                 raise RyoToolError(
                     f"unexpected REST response shape for {tool}: expected a "
@@ -207,7 +246,10 @@ class RyoClient:
         try:
             return response.json()
         except ValueError:
-
+            # response.json() raises json.JSONDecodeError (a ValueError
+            # subclass) on non-JSON bodies -- narrowed from a blind except
+            # so a genuine bug elsewhere in this method isn't silently
+            # swallowed along with the case this is actually for.
             return {"raw_text": response.text}
 
     def health(self) -> dict[str, Any]:

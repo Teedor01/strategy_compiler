@@ -18,7 +18,7 @@ class MissingEvidence(Exception):
 class RyoEnvelope:
     schema_version: str | None
     tool: str | None
-    status: str  
+    status: str 
     data_mode: str | None  
     as_of: str | None
     request: dict[str, Any]
@@ -44,7 +44,7 @@ class RyoEnvelope:
         if node is None:
             raise MissingEvidence(
                 f"path '{dotted_path}' is null in {self.tool} data envelope "
-                "(RYO returned no measurement... do not treat as 0/False)"
+                "(RYO returned no measurement -- do not treat as 0/False)"
             )
         return node
 

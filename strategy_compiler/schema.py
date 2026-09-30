@@ -1,3 +1,14 @@
+"""Typed schema for Strategy Compiler.
+
+These types are the contract between the three stages that must never blur
+into each other:
+
+    LLM translates human language  -> Strategy (this module)
+    Deterministic code resolves evidence -> ResolvedEvidence (this module)
+    Deterministic code evaluates constraints -> RuleResult / Decision (this module)
+
+Nothing in this module calls an LLM or a network. It is pure data.
+"""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -56,7 +67,7 @@ class Rule:
     """One machine-checkable constraint extracted from the human strategy."""
 
     id: str
-    raw_text: str  
+    raw_text: str  # the exact clause of the original strategy this came from
     status: RuleStatus
     asset: str | None = None
     metric: str | None = None

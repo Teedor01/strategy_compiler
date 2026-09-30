@@ -1,3 +1,27 @@
+"""Maps a rule's metric to where its evidence must come from, then fetches it.
+
+The registry below is deliberately small and explicit. Every entry is backed
+by a field that actually exists in RYO's documented response shape:
+
+  - "market_regime" -> MarketOverview.regime, one of
+    risk_on | risk_off | rotation | chop (docs/ryo-openapi-subset.json,
+    schema MarketOverview) via market_overview.
+  - "momentum_state" -> analyze_token's technical read. The guide describes
+    analyze_token as returning "calculated technical measurements such as
+    RSI(14) and ATR(14)"; this build reads data.technicals.rsi_14 and applies
+    a *documented, fixed* threshold (RSI > 55 = "positive momentum", RSI < 45
+    = "negative"), not a value the LLM invented -- see compiler.py, the
+    threshold lives in code, not in a prompt.
+  - "safety_check" is deliberately NOT in this registry. RYO's guide states
+    plainly under "Six independent research tools" that the surface "does
+    not publish a portfolio-analysis or symbol-only safety tool." A rule
+    that requires a safety check therefore has nowhere to resolve from and
+    must compile to UNSUPPORTED, not be quietly dropped or guessed at.
+  - "allocation_pct" -> EvidenceSource.USER_DECLARED. RYO "cannot read user
+    balances, positions, or portfolio state" (same section) -- this is the
+    calling application's own responsibility, supplied as an explicit input,
+    never invented.
+"""
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -37,7 +61,7 @@ REGISTRY: dict[str, MetricSpec] = {
             "RYO analyze_token.data.technical_analysis.rsi_14, thresholded in code "
             "(>55 positive, <45 negative). Path confirmed against a real, "
             "live-recorded analyze_token response (fixtures/recorded/analyze_token/SOL.json "
-            "in the public Nota reference repo)... the guide's own prose ('calculated "
+            "in the public Nota reference repo) -- the guide's own prose ('calculated "
             "technical measurements such as RSI(14) and ATR(14)') never states the exact "
             "JSON path, and no schema for analyze_token's payload exists in "
             "ryo-openapi-subset.json either. The first version of this registry used "
@@ -56,7 +80,15 @@ REGISTRY: dict[str, MetricSpec] = {
             "calling application must supply this explicitly."
         ),
     ),
-
+    # --- added after auditing candidate evidence types against real,
+    # live-recorded RYO responses (fixtures/recorded/ in the public Nota
+    # reference repo). Each entry below was checked against all five
+    # questions: (1) can RYO actually provide it, (2) can the condition be
+    # expressed deterministically, (3) can the compiler express it without
+    # inventing a threshold, (4) can the evaluator verify it from returned
+    # evidence, (5) can the receipt cite the exact evidence path. Only
+    # entries that passed all five were added. See docs/LIMITATIONS.md for
+    # the full audit, including candidates that did NOT pass and why.
     "price_usd": MetricSpec(
         source=EvidenceSource.RYO_TOOL,
         ryo_tool="analyze_token",
@@ -100,6 +132,33 @@ REGISTRY: dict[str, MetricSpec] = {
         ),
     ),
 }
+
+# Candidates that were audited against the same five questions and did NOT
+# pass -- recorded here, not silently dropped, so the same case isn't
+# re-litigated from scratch later:
+#
+# - Token narrative / catalysts / risks / token_profile analysis text
+#   (analyze_token.data.intelligence, deep_analysis.data.token_profile):
+#   real fields, but free text, not a value a deterministic operator can
+#   compare against. Fails question 3 (compiler would have to judge prose)
+#   and question 4 (evaluator can't verify prose against a threshold).
+# - Cross-token comparison winner (compare_tokens.data.winner /
+#   conclusion.pick): passes all five questions in principle, but a rule
+#   like "only buy SOL if it beats BTC and ETH" needs a *set* of comparison
+#   symbols, and schema.py's Rule has exactly one `asset` field -- adding
+#   this cleanly needs a Rule/EvidenceRequirement shape change, not just a
+#   registry entry. Real candidate for a future pass; out of scope for an
+#   evidence-registry audit that isn't supposed to redesign the schema.
+# - Derivatives (deep_analysis.data.derivatives.funding_rate_bps,
+#   squeeze_risk, veto): passes all five questions too (confirmed live
+#   fields), deferred only to keep this pass's diff reviewable -- it needs
+#   its own MetricSpec plus handling for the field legitimately being
+#   `null` per-token (the recording shows long_short_ratio: null for SOL),
+#   which the other four additions above don't need to handle.
+# - News/claim verification: RYO provides no such tool at all (confirmed:
+#   none of the six Builder MCP tools touch news; the guide is explicit
+#   that a news source, if used, is the builder's own responsibility).
+#   Fails question 1 outright. A rule needing this stays UNSUPPORTED.
 
 
 def known_metric(metric: str) -> bool:
@@ -155,6 +214,7 @@ def resolve(
             "RYO cannot supply it either.",
         )
 
+    # EvidenceSource.RYO_TOOL
     try:
         envelope = ryo_call(requirement.ryo_tool, requirement.ryo_args)
     except RyoToolError as exc:

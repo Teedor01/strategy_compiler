@@ -1,3 +1,20 @@
+"""Packages compile+decide as a Track 3 skill, matching RYO's own contract.
+
+Shape verified from docs/ryo-openapi-subset.json (schemas SkillDefinition,
+SkillArgSchema, SkillCallRequest, SkillCallResponse) rather than guessed:
+
+    SkillDefinition:  name, description, args: [SkillArgSchema], requires_guard, xp
+    SkillArgSchema:   name, type, required, description, enum?, items?
+    SkillCallRequest: name, args, conversation_id?
+    SkillCallResponse: name, status, result, latency_ms?, xp?, guard_decision?
+
+`requires_guard` is present in RYO's schema specifically for
+execute_*/place_limit_order/cancel_order-style skills that need to be
+routed through RYO's own signing guard before they touch anything real.
+compile_strategy is read-only and produces no order, so requires_guard is
+correctly False here -- not omitted, set deliberately to the value the real
+schema's own description implies for a skill like this one.
+"""
 from __future__ import annotations
 
 import time
@@ -54,6 +71,11 @@ def invoke(args: dict[str, Any], *, llm: LLMProvider, ryo: RyoClient) -> dict[st
 
     user_declared = args.get("user_declared") or {}
     if not isinstance(user_declared, dict):
+        # Caught here explicitly rather than left to duck-typing: Python's
+        # `in` operator on a str does substring matching, so a garbage
+        # string could silently and coincidentally "match" a metric name
+        # instead of failing loudly. Reject the wrong type before it ever
+        # reaches resolver.py.
         return {
             "name": SKILL_DEFINITION["name"],
             "status": "error",

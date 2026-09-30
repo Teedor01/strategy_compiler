@@ -74,7 +74,6 @@ def _classify_single(rule_id: str, raw: dict[str, Any]) -> Rule:
             problem=problem,
         )
 
-
     if metric is None or not known_metric(metric):
         return Rule(
             id=rule_id,

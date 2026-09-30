@@ -147,7 +147,6 @@ CANNED_TRANSLATIONS = {
             "ambiguity_note": None,
         }
     ],
-    # --- multiple blocking rules in one strategy ---
     "Buy SOL only if momentum is above 90 and SOL stays below 5% of the portfolio.": [
         {
             "raw_text": "momentum is above 90",
@@ -169,8 +168,6 @@ CANNED_TRANSLATIONS = {
 }
 
 DEMO_FIXTURE_LLM = FixtureLLM(CANNED_TRANSLATIONS)
-
-
 
 
 _MARKET_OVERVIEW_RISK_ON = {
